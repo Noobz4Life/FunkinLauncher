@@ -65,11 +65,11 @@ ipcMain.on('download-engine', (event, engineID) => {
 });
 
 ipcMain.on('open-engine-folder', (event) => {
-    exec('explorer.exe ' + path.join(appDataPath, 'engines'), (err, stdout, stderr) => {});
+    shell.openPath(path.join(appDataPath, 'engines'));
 });
 
 ipcMain.on('open-logs-folder', (event) => {
-    exec('explorer.exe ' + path.join(appDataPath, 'logs'), (err, stdout, stderr) => {});
+    shell.openPath(path.join(appDataPath, 'logs'));
 });
 
 ipcMain.on('remove-engine', (event, engineID, removeFiles) => {
@@ -78,6 +78,34 @@ ipcMain.on('remove-engine', (event, engineID, removeFiles) => {
     }
     dbDeleteValue('engine' + engineID);
 });
+
+function getStartCmd(exeName, cwd) {
+    var exePath = path.join(cwd, exeName)
+    var startCmd = ''
+    if(exePath == null || process.platform == 'win32') return startCmd;
+
+    // Since execNames don't have .exe in them, we check if an .exe exists or not.
+    // The first part is for future-proofing
+    var isExe = exePath.endsWith('.exe') || (!fs.existsSync(exePath) && fs.existsSync(exePath + '.exe')) 
+
+    switch(process.platform) {
+        case 'freebsd': // As far as I know, FreeBSD also uses WINE
+        case 'linux':
+            if (isExe) {
+                // WINE lets you use Windows programs on Linux.
+                // TODO: Setup WINE Prefix support instead of using the default?
+                startCmd = 'wine '
+            }
+            break
+        case 'darwin': // Mac
+            if(isExe) {
+                // I'm unsure of what the standard is on Mac, so we'll just use whatever the default application is for executables on Mac (most likely a variant of WINE)
+                startCmd = 'open '
+            }
+            break
+    }
+    return startCmd
+}
 
 ipcMain.on('load-game', (event, engineID) => {
     win.webContents.executeJavaScript('onGameLoad();');
@@ -90,7 +118,12 @@ ipcMain.on('load-game', (event, engineID) => {
         return;
     }
 
-    exec('start ' + execName[engineID], { cwd: dbReadValue('engine' + engineID) }, (err, stdout, stderr) => {
+    var cwd = dbReadValue('engine' + engineID)
+
+    var startCmd = getStartCmd(execName[engineID], cwd)
+    console.log("Start command: " + startCmd)
+
+    exec(startCmd + execName[engineID], { cwd: cwd }, (err, stdout, stderr) => {
         if (err) {
             console.error(err);
             win.show();
@@ -131,7 +164,6 @@ ipcMain.on('reload-settings', (event) => {
 });
 
 ipcMain.on('load-mm', (event, engineID) => {
-    // ENGINEID IS IRRELEVANT FOR MM
     win.webContents.executeJavaScript('onGameLoad();');
     win.hide();
     var gamePath = dbReadValue('engine1');
@@ -142,7 +174,12 @@ ipcMain.on('load-mm', (event, engineID) => {
         return;
     }
 
-    exec('' + execName[engineID] + ' -mm', { cwd: dbReadValue('engine' + engineID) }, (err, stdout, stderr) => {
+    var cwd = dbReadValue('engine' + engineID)
+
+    var startCmd = getStartCmd(execName[engineID], cwd)
+    console.log("Start command: " + startCmd)
+
+    exec(startCmd + execName[engineID] + ' -mm', { cwd: cwd }, (err, stdout, stderr) => {
         if (err) {
             console.error(err);
             win.show();

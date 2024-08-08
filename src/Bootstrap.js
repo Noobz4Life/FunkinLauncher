@@ -9,4 +9,6 @@ if (os.platform() === 'win32') {
     } else {
         process.exit(1203);
     }
+} else { // Allow other platforms. We give a warning in Main.js for platforms that aren't Windows (see first few lines in the app.whenReady hook in Main.js)
+    var app = require('./Main');
 }

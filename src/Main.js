@@ -27,7 +27,7 @@ const express = require('express');
 const e = require('express');
 const move = require('fs-move');
 const { title } = require('process');
-const { pathToFileURL } = require('url');
+const { pathToFileURL, format:urlFormat } = require('url');
 const { dbDeleteValue, dbGetAllEngines, dbReadValue, dbWriteValue, appDataPath } = require('./Database');
 
 // Migrate 1.4 engines to 1.5
@@ -198,7 +198,11 @@ function createWindow() {
     defineIPC();
 
     if (launchLauncher) {
-        win.loadURL(path.join(__dirname, '../', 'static', 'index.html'));
+        win.loadURL(urlFormat({
+            pathname: path.join(__dirname, '../', 'static', 'index.html'),
+            protocol: 'file:',
+            slashes: true
+        }));
         win.webContents.on('did-finish-load', () => {
             win.webContents.executeJavaScript('versionPass("' + require('../package.json').version + '");');
             win.webContents.executeJavaScript('localStorage.setItem("engineSrc","' + dbReadValue('engineSrc') + '");');
@@ -260,6 +264,19 @@ function downloadEngine(engineID) {
 
 
 app.whenReady().then(() => {
+    // Warning if you're on a non-Windows platform.
+    if (process.platform !== 'win32' && !dbReadValue('read' + process.platform + 'warning')) {
+        var choice = dialog.showMessageBoxSync({
+            title: 'Notice',
+            message: 'Warning! Platforms other than Windows are not supported.\nThe app may be a bit unstable or not function at all!' + '\n\nYou are currently on ' + process.platform + '.',
+            buttons: ['I know what I\'m doing!', 'Cancel']
+        });
+        if(choice === 1) {
+            return process.exit(0);
+        }
+        dbWriteValue('read' + process.platform + 'warning', true) // Don't show this warning again
+    }
+
     request('https://ffm-backend.web.app/version.json', (err, res, body) => {
         var ver = JSON.parse(body).version;
         var blist = ['Let\'s update','Later (not reccomended)'];
