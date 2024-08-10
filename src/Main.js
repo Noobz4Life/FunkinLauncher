@@ -30,6 +30,7 @@ const { title } = require('process');
 const { pathToFileURL, format:urlFormat } = require('url');
 const { dbDeleteValue, dbGetAllEngines, dbReadValue, dbWriteValue, appDataPath } = require('./Database');
 
+const defaultWinePrefix = path.join(appDataPath, "wine", "prefix") // Only used on non-Windows platforms!!
 
 // TODO: this function just acts as bridge but we need a firewall
 function request(url, callback) {
@@ -157,7 +158,6 @@ function defineIPC() {
     eval(fs.readFileSync(path.join(__dirname, 'MainIPC.js')).toString());
 }
 
-
 function createWindow() {
     var launchLauncher = true;
     process.argv.forEach((val, index) => {
@@ -247,17 +247,19 @@ function downloadEngine(engineID) {
 
 
 app.whenReady().then(() => {
-    // Warning if you're on a non-Windows platform.
-    if (process.platform !== 'win32' && !dbReadValue('read' + process.platform + 'warning')) {
-        var choice = dialog.showMessageBoxSync({
-            title: 'Notice',
-            message: 'Warning! Platforms other than Windows are not supported.\nThe app may be a bit unstable or not function at all!' + '\n\nYou are currently on ' + process.platform + '.',
-            buttons: ['I know what I\'m doing!', 'Cancel']
-        });
-        if(choice === 1) {
-            return process.exit(0);
+    if (process.platform !== 'win32') {
+        // Warning if you're on a non-Windows platform.
+        if(!dbReadValue('read' + process.platform + 'warning')) {
+            var choice = dialog.showMessageBoxSync({
+                title: 'Notice',
+                message: 'Warning! Platforms other than Windows are not supported.\nThe app may be a bit unstable or not function at all!' + '\n\nYou are currently on ' + process.platform + '.',
+                buttons: ['I know what I\'m doing!', 'Cancel']
+            });
+            if(choice === 1) {
+                return process.exit(0);
+            }
+            dbWriteValue('read' + process.platform + 'warning', true) // Don't show this warning again
         }
-        dbWriteValue('read' + process.platform + 'warning', true) // Don't show this warning again
     }
 
     request('https://ffm-backend.web.app/version.json', (err, res, body) => {

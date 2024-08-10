@@ -79,10 +79,11 @@ ipcMain.on('remove-engine', (event, engineID, removeFiles) => {
     dbDeleteValue('engine' + engineID);
 });
 
+// Separate platforms use their own starting command.
 function getStartCmd(exeName, cwd) {
     var exePath = path.join(cwd, exeName)
-    var startCmd = ''
-    if(exePath == null || process.platform == 'win32') return startCmd;
+    var execCmd = ''
+    if(exePath == null || process.platform == 'win32') return execCmd;
 
     // Since execNames don't have .exe in them, we check if an .exe exists or not.
     // The first part is for future-proofing
@@ -93,18 +94,51 @@ function getStartCmd(exeName, cwd) {
         case 'linux':
             if (isExe) {
                 // WINE lets you use Windows programs on Linux.
-                // TODO: Setup WINE Prefix support instead of using the default?
-                startCmd = 'wine '
+                execCmd = 'wine start '
             }
             break
         case 'darwin': // Mac
             if(isExe) {
                 // I'm unsure of what the standard is on Mac, so we'll just use whatever the default application is for executables on Mac (most likely a variant of WINE)
-                startCmd = 'open '
+                execCmd = 'open '
             }
             break
     }
-    return startCmd
+    return execCmd
+}
+
+// This function handles logging, how the game is started, etc.
+function execGame(exePath, execArgs, engineID) {
+    var cwd = path.dirname(exePath)
+    var exeName = path.basename(exePath)
+    var execCmd = exeName
+    var execOptions = {cwd:cwd}
+
+    if(execArgs != null) {
+        execCmd = execCmd + ' ' + execArgs
+    }
+
+    // Use the WINE prefix on non-Windows platforms
+    if (process.platform != 'win32') {
+        console.log(`Using WINE prefix: ${defaultWinePrefix}`)
+        execOptions.env = { ...process.env, WINEPREFIX: defaultWinePrefix } 
+
+        // TODO: Setup WINE prefix for the user (WINE doesn't come with Discord RPC or Windows fonts)
+        if (!fs.existsSync(defaultWinePrefix)) {
+            fs.mkdirSync(defaultWinePrefix, { recursive: true });
+        }
+    }
+    return exec(getStartCmd(exeName, cwd) + execCmd, execOptions, (err, stdout, stderr) => {
+        if (err) {
+            console.error(err);
+            win.show();
+            win.webContents.executeJavaScript('onUnexpectedGameClose();');
+            return;
+        }
+        console.log(stdout);
+        win.show();
+        win.webContents.executeJavaScript('onGameClose();');
+    });
 }
 
 ipcMain.on('load-game', (event, engineID) => {
@@ -119,21 +153,7 @@ ipcMain.on('load-game', (event, engineID) => {
     }
 
     var cwd = dbReadValue('engine' + engineID)
-
-    var startCmd = getStartCmd(execName[engineID], cwd)
-    console.log("Start command: " + startCmd)
-
-    exec(startCmd + execName[engineID], { cwd: cwd }, (err, stdout, stderr) => {
-        if (err) {
-            console.error(err);
-            win.show();
-            win.webContents.executeJavaScript('onUnexpectedGameClose();');
-            return;
-        }
-        console.log(stdout);
-        win.show();
-        win.webContents.executeJavaScript('onGameClose();');
-    });
+    execGame(path.join(cwd,execName[engineID]), null, cwd, engineID);
 });
 
 ipcMain.on('open-settings', (event) => {
@@ -176,21 +196,7 @@ ipcMain.on('load-mm', (event, engineID) => {
     }
 
     var cwd = dbReadValue('engine' + engineID)
-
-    var startCmd = getStartCmd(execName[engineID], cwd)
-    console.log("Start command: " + startCmd)
-
-    exec(startCmd + execName[engineID] + ' -mm', { cwd: cwd }, (err, stdout, stderr) => {
-        if (err) {
-            console.error(err);
-            win.show();
-            win.webContents.executeJavaScript('onUnexpectedGameClose();');
-            return;
-        }
-        console.log(stdout);
-        win.show();
-        win.webContents.executeJavaScript('onGameClose();');
-    });
+    execGame(path.join(cwd,execName[engineID]),'-mm', cwd, engineID)
 });
 
 ipcMain.on('security-alert', (event, setHost, host) => {
