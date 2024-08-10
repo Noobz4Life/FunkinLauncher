@@ -30,23 +30,6 @@ const { title } = require('process');
 const { pathToFileURL, format:urlFormat } = require('url');
 const { dbDeleteValue, dbGetAllEngines, dbReadValue, dbWriteValue, appDataPath } = require('./Database');
 
-// Migrate 1.4 engines to 1.5
-/*
-if (fs.existsSync(path.join(__dirname, '../', 'engines'))) {
-    fs.readdirSync(path.join(__dirname, '../', 'engines')).forEach((element) => {
-        dbWriteValue(element, path.join(appDataPath, 'engines', element));
-        move(path.join(__dirname, '../', 'engines', element), path.join(appDataPath, 'engines', element), (err) => {
-            if (err) {
-                console.error(err);
-            }
-        });
-    });
-}
-*/ 
-// This broke since Noobz4Life now packages the app with asar
-
-// Start server (TODO code the thing)
-const { Server } = require('./Server');
 
 // TODO: this function just acts as bridge but we need a firewall
 function request(url, callback) {
@@ -278,28 +261,35 @@ app.whenReady().then(() => {
     }
 
     request('https://ffm-backend.web.app/version.json', (err, res, body) => {
-        var ver = JSON.parse(body).version;
-        var blist = ['Let\'s update','Later (not reccomended)'];
+        if (err) {
+            console.error("Failed to fetch the version data:", err);
+            createWindow();
+            return;
+        }
+        // intCV and AV or whatever the fuck that was hurted my brain
+        const remoteVersion = JSON.parse(body).version;
+        const currentVersion = require('../package.json').version;
 
-        var intCV = parseInt(require('../package.json').version.replace(/\./g, ''));
-        var intAV = parseInt(ver.replace(/\./g, ''));
-        if (Math.max(intCV, intAV) == intAV) {
+        const intRemoteVersion = parseInt(remoteVersion.replace(/\./g, ''));
+        const intCurrentVersion = parseInt(currentVersion.replace(/\./g, ''));
+
+        if (intRemoteVersion > intCurrentVersion) {
             dialog.showMessageBox({
                 title: 'Update available',
-                message: 'An update is available for FNF Launcher. ' + require('../package.json').version + ' -> ' + ver,
-                buttons: blist
+                message: `An update is available for FNF Launcher. ${currentVersion} -> ${remoteVersion}`,
+                buttons: ['Update now', 'Later (not recommended)']
             }).then((result) => {
-                if (result.response == 0) {
-                    shell.openExternal('https://gamebanana.com/tools/17526');
-                    app.quit(0);
-                }
-                if (result.response == 1) {
-                    console.log('User is a fricking geek cuz he used the funny flags');
+                if (result.response === 0) {
+                    const updatePath = __dirname;
+                    console.log(`Updating at ${updatePath}`);
+                    downloadAndUpdate(updatePath, remoteVersion, JSON.parse(body).vlink);
+                } else {
+                    console.log('User chose to skip the update.');
                     createWindow();
                 }
             });
-        }
-        else {
+        } else {
+            console.log('No update is needed.');
             createWindow();
         }
     });
@@ -313,93 +303,41 @@ app.on('window-all-closed', function () {
     if (process.platform !== 'darwin') app.quit();
 });
 
-ipcMain.on('security-alert', (event, setHost, host) => {
-    if (!setHost) {
-        dialog.showMessageBox({
-            title: 'Security Alert',
-            message: 'Warning! Third party servers are not controlled by us and may be harmful. We do not take responsibility for any damage caused by third party servers and their content. Please be sure to trust the author of this build host before proceeding.',
-            buttons: ['Ok']
-        });
-    }
-    else {
-        dialog.showMessageBox({
-            title: (host == 'ffm-backend.web.app' ? 'Warning' : 'Security Warning'),
-            message: (host == 'ffm-backend.web.app' ? 'Are you sure you want to make these changes?' : 'Warning! Third party servers are not controlled by us and may be harmful. We do not take responsibility for any damage caused by third party servers and their content. Please be sure to trust the author of this build host before proceeding. Are you sure you want to trust ' + host + ' and use it as your build host?'),
-            buttons: ['Yes','No'],
-            defaultId: 1
-        }).then((result) => {
-            if (result.response == 0) {
-                dbWriteValue('engineSrc', host);
-                dialog.showMessageBox({
-                    message: 'The app will now restart to apply the changes.',
-                }).then(() => {
-                    app.relaunch();
-                    app.quit();
-                });
-            }
-        });
-    }
-});
+function downloadAndUpdate(updatePath, version, downloadURL) {
 
-ipcMain.on('install-mod', (event, url, ed) => {
-    console.log('installing mod...');
-    fs.mkdirSync(path.join(appDataPath, 'downloads'), { recursive: true });
+    console.log(`Downloading update from ${downloadURL} to ${updatePath}`);
 
-    if (dbReadValue('engine' + ed) == undefined) {
-        mmi.webContents.executeJavaScript('onEngineNotInstalled();');
-        return;
-    }
-
-    const downloadPath = path.join(appDataPath, 'downloads', 'mod-' + btoa(url) + '.zip');
-
-    progress(request(url))
+    progress(request(downloadURL))
         .on('progress', (state) => {
-            console.log('percent: ' + Math.round(state.percent * 100) + '%');
-            mmi.webContents.executeJavaScript('updateProgress("' + Math.round(state.percent * 100) + '%");');
+            console.log(`Download progress: ${Math.round(state.percent * 100)}%`);
         })
         .on('error', (err) => {
-            console.error(err);
-            mmi.webContents.executeJavaScript('onDownloadError();');
+            console.error('Download failed:', err);
+            dialog.showMessageBox({
+                title: 'Update Error',
+                message: 'The update failed to download. Please try again later.',
+                buttons: ['OK']
+            });
+            exit(0);
         })
         .on('end', () => {
-            zl.extract(downloadPath, path.join(dbReadValue('engine' + ed), 'mods'), (err) => {
+            console.log('Download complete. Installing update...');
+            zl.extract(downloadURL, updatePath, (err) => {
                 if (err) {
-                    console.error(err);
-                    mmi.webContents.executeJavaScript('onDownloadError();');
+                    console.error('Failed to extract the update:', err);
                     return;
                 }
-                fs.rmSync(downloadPath, { recursive: true });
+                console.log('Update installed successfully!');
+                dialog.showMessageBox({
+                    title: 'Update Complete',
+                    message: 'The update has been installed successfully. Please restart the application for the changes to take effect.',
+                    buttons: ['OK']
+                }).then(result => {
+                    app.relaunch();
+                });
             });
-            mmi.webContents.executeJavaScript('onDownloadComplete();');
         })
-        .pipe(fs.createWriteStream(downloadPath));
-});
-
-/*
-const eapp = express();
-
-eapp.get('/', (req, res) => {
-    var url = req.query.url;
-    mmi = new BrowserWindow({
-        width: 1280,
-        height: 720,
-        resizable: false,
-        fullscreenable: false,
-        minimizable: false,
-        webPreferences: {
-            nodeIntegration: true,
-            preload: path.join(__dirname, '../', 'RendererIPC.js')
-        }
-    });
-    mmi.loadFile(path.join(__dirname, '../', 'static', 'mmi.html'));
-    mmi.webContents.executeJavaScript('receiveUrl("' + url + '");');
-    res.send('ok');
-});
-
-eapp.listen(3000, () => {
-    console.log('Server is running on port 3000');
-});
-*/
-// no longer needed
+        .pipe(fs.createWriteStream(path.join(updatePath, `FNFLauncher-${version}.zip`)));
+}
 
 module.exports = this;

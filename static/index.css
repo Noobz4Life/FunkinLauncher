@@ -102,6 +102,7 @@ h1 {
     display: flex;
     position: fixed;
     top: 0;
+    width: 1000px;
     height: 100vh;
     transition: left 0.5s;
 }
@@ -109,7 +110,6 @@ h1 {
 .container.loaded {
     left: 0;
 }
-
 .settingsBtn {
     width: 43px;
     height: 45px;
