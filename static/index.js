@@ -9,18 +9,32 @@ setInterval(function () {
 });
 var bgm;
 
+window.state = 'SelectGame';
+
 // var isGameCloseEventGonnaFireAndTalkAbotuImportedEngine = false;
+
+function onCloseSettings() {
+    window.state = 'SelectGame';
+    var ca = new Audio('cancel.mp3');
+    ca.volume = 0.5;
+    bgm.volume = localStorage.getItem('volume');
+    ca.play();
+}
 
 function openSettings() {
     var ca = new Audio('confirm.mp3');
+    window.state = 'Settings';
     ca.volume = 0.5;
     ca.play();
+    bgm.volume = 0;
     window.electronAPI.settings();
 }
 
 function loadEngine() {
     var dropdown = document.getElementById('enginedd');
     var selectedOption = dropdown.value;
+
+    window.state = 'LoadedGame';
 
     bgm.volume = 0;
     document.getElementById('settings').disabled = true;
@@ -34,16 +48,19 @@ function versionPass(data) {
 
 function license() {
     document.getElementsByClassName('license')[0].style.display = 'block';
+    window.state = 'License';
     document.getElementsByClassName('license')[0].classList.add('open');
 }
 
 function olicense() {
     document.getElementsByClassName('license')[0].style.display = 'none';
+    window.state = 'SelectGame';
     document.getElementsByClassName('license')[0].classList.remove('open');
 }
 
 function loadPsychMM() {
     bgm.volume = 0
+    window.state = 'LoadedGame';
     document.getElementById('settings').disabled = true;
     window.electronAPI.loadMM(1);
 }
@@ -59,11 +76,13 @@ function onGameLoad() {
     document.getElementsByClassName('launcher')[0].style.display = 'none';
     document.getElementsByClassName('instance')[0].style.display = 'block';
     document.getElementById('settings').disabled = true;
+    window.state = 'LoadedGame';
 
 }
 
 function onGameClose() {
     bgm.volume = localStorage.getItem('volume');
+    window.state = 'SelectGame';
     document.getElementsByClassName('launcher')[0].style.display = 'block';
     document.getElementsByClassName('instance')[0].style.display = 'none';
     document.getElementsByClassName('doi')[0].style.display = 'none';
@@ -72,9 +91,11 @@ function onGameClose() {
 
 function updateProgress(percent) {
     targetProgress = percent;
+    document.getElementById('mbs').innerText = '';
 }
 
 function onDownloadError() {
+    window.state = 'SelectGame';
     bgm.volume = localStorage.getItem('volume');
     document.getElementById('settings').disabled = false;
     window.alert('An error occurred while downloading the engine.');
@@ -84,6 +105,7 @@ function onDownloadError() {
 }
 
 function onDownloadComplete() {
+    window.state = 'SelectGame';
     bgm.volume = localStorage.getItem('volume');
     document.getElementById('settings').disabled = false;
     document.getElementById('progress').innerText = '';
@@ -94,6 +116,7 @@ function onDownloadComplete() {
 }
 
 function promptDownload() {
+    window.state = 'Download';
     document.getElementById('settings').disabled = true;
     bgm.volume = localStorage.getItem('volume');
     // create option to either import or download
@@ -104,6 +127,7 @@ function promptDownload() {
 }
 
 function downloadEngine() {
+    window.state = 'Download';
     document.getElementsByClassName('launcher')[0].style.display = 'none';
     document.getElementsByClassName('download')[0].style.display = 'block';
     document.getElementsByClassName('instance')[0].style.display = 'none';
@@ -112,6 +136,7 @@ function downloadEngine() {
 }
 
 function importEngine() {
+    window.state = 'Download';
     window.electronAPI.importEngine(document.getElementById('enginedd').value);
 }
 
@@ -138,10 +163,13 @@ fetch("https://" + localStorage.getItem('engineSrc') + "/engines.json")
                 document.getElementById('cso').innerHTML += '<br>';
             }
             var link = document.createElement('a');
+            link.class = "cslink";
             link.style.marginLeft = '5px';
             link.href = 'javascript:goto("' + engine.id + '")';
             link.innerText = formalName[engine.id];
-            document.getElementById('cso').appendChild(link);
+            var pl = document.createElement('span');
+            pl.appendChild(link);
+            document.getElementById('cso').appendChild(pl);
         });
     });
 
@@ -169,7 +197,12 @@ bgm.play();
 var deg = 0;
 setInterval(function() {
     deg += 0.1;
-    document.getElementById('settingsBtnImg').style.transform = 'rotate(' + deg + 'deg)';
+    try {
+        document.getElementById('settingsBtnImg').style.transform = 'rotate(' + deg + 'deg)';
+    }
+    catch (e) {
+        // Do nothing
+    }
 },1/60);
 
 // custom select dropdown
@@ -178,8 +211,6 @@ var csOpen = false;
 
 setInterval(function() {
     document.getElementById('csv').innerText = formalName[parseInt(document.getElementById('enginedd').value)];
-    document.getElementById('le').style.display = csOpen ? 'none' : 'unset';
-    document.getElementById('pmm').style.display = (csOpen) ? 'none' : (formalName[document.getElementById('enginedd').value] == 'Psych Engine' ? 'unset' : 'none');
 });
 
 document.getElementById('csd').onclick = function() {
@@ -192,6 +223,19 @@ document.body.onclick = function(e) {
     if (e.target.id != 'cso' && e.target.id != 'csd') {
         csOpen = false;
         document.getElementById('cso').style.height = "0px";
-        document.getElementById('cso').style.display = "none";
+        document.getElementById('cso').style.display = "block";
     }
+}
+
+document.getElementById('cso').style.height = "0px";
+document.getElementById('cso').style.display = "block";
+
+function randomString(length) {
+    let result = '';
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const charactersLength = characters.length;
+    for (let i = 0; i < length; i++) {
+        result += characters.charAt(Math.floor(Math.random() * charactersLength));
+    }
+    return result;
 }

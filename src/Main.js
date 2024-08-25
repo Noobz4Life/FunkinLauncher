@@ -15,14 +15,19 @@
  * https://gamebanana.com/tools/17526
 */
 
-const { app, BrowserWindow, ipcMain, net, protocol, dialog, webContents, webFrame, shell } = require('electron');
+
+const { app, BrowserWindow, ipcMain, net, protocol, dialog, webContents, webFrame, shell, Notification } = require('electron');
 const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const chalk = require('chalk');
 const progress = require('request-progress');
 const URL = require('lite-url');
+const { extractor, createExtractorFromFile } = require('node-unrar-js');
 const zl = require("zip-lib");
+const zipLib = require("zip-lib");
+const unrar = require("unrar");
+const seven = require('node-7z');
 const express = require('express');
 const e = require('express');
 const move = require('fs-move');
@@ -43,6 +48,8 @@ function isHealthy(url) {
     return true;
 }
 
+var konamiClosed = false;
+
 function formattedDate() {
     var date = new Date(Date.now());
     return date.getFullYear() + '-' + (date.getMonth() + 1) + '-' + date.getDate() + '-' + date.getHours() + '-' + date.getMinutes() + '-logs';
@@ -55,19 +62,6 @@ if (!fs.existsSync(path.join(appDataPath, 'logs'))) {
 
 var logStream = fs.createWriteStream(path.join(appDataPath, 'logs', formattedDate() + '.log'), { flags: 'w' });
 
-// Better logs to terminal
-
-const oldLog = console.log;
-console.log = function (d) {
-    const stack = new Error().stack.split('\n');
-    const caller = stack[2].trim().split(' ');
-    const fileName = caller[1].split('/').pop();
-    const lineNumber = caller[caller.length - 1].split(':')[1];
-    const logMessage = `${lineNumber.replace(__dirname, '')} ${d}`;
-    logStream.write(logMessage + '\n');
-    process.stdout.write(chalk.red(lineNumber.replace(__dirname, '')) + ': ' + d + '\n\n');
-};
-
 
 // Window configuration
 var mmi;
@@ -78,6 +72,7 @@ var launcherWindow = {
     width: 1280,
     height: 720,
     resizable: false,
+    fullscreen: false,
     fullscreenable: false,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
@@ -187,15 +182,16 @@ function createWindow() {
             slashes: true
         }));
         win.webContents.on('did-finish-load', () => {
-            win.webContents.executeJavaScript('versionPass("' + require('../package.json').version + '");');
+            win.webContents.executeJavaScript('versionPass("' + require('../package.json').version + (process.argv.includes('frombatch') ? '-BETA' : '') + '");');
             win.webContents.executeJavaScript('localStorage.setItem("engineSrc","' + dbReadValue('engineSrc') + '");');
         });
     }
 
     //win.webContents.executeJavaScript('window.alert("' + process.argv.join(',') + '")');
 }
+
 function downloadEngine(engineID) {
-    console.log('installing some engines today...');
+    console.log('Installing engine...');
 
     dialog.showOpenDialog(win, {
         properties: ['openDirectory']
@@ -208,13 +204,15 @@ function downloadEngine(engineID) {
         }
 
         const selectedPath = result.filePaths[0];
-        const downloadPath = path.join(selectedPath, 'temp_e' + engineID + '.zip');
+        const downloadPath = path.join(selectedPath, `temp_e${engineID}.zip`);
         const extractPath = path.join(selectedPath);
 
         fs.mkdirSync(selectedPath, { recursive: true });
 
-        const downloadURL = "https://" + dbReadValue('engineSrc') + "/e" + engineID + ".zip";
-        console.log(downloadURL);
+        const downloadURL = `https://${dbReadValue('engineSrc')}/e${engineID}.zip`;
+        console.log(`Downloading from ${downloadURL}`);
+
+        var startTime = Date.now();
 
         progress(request(downloadURL))
             .on('progress', (state) => {
@@ -225,17 +223,28 @@ function downloadEngine(engineID) {
                 console.error(err);
                 win.webContents.executeJavaScript('onDownloadError();');
             })
-            .on('end', () => {
-                dbWriteValue('engine' + engineID, extractPath);
-                zl.extract(downloadPath, extractPath, (err) => {
-                    if (err) {
-                        console.error(err);
-                        win.webContents.executeJavaScript('onDownloadError();');
-                        return;
-                    }
+            .on('end', async () => {
+                try {
+                    fs.mkdirSync(extractPath, { recursive: true });
+
+                    console.log('Download complete. Extracting...');
+                    await extractFile(downloadPath, extractPath);
+                    
                     fs.rmSync(downloadPath, { recursive: true });
-                });
-                win.webContents.executeJavaScript('onDownloadComplete();');
+
+                    dbWriteValue(`engine${engineID}`, extractPath);
+                    
+                    win.webContents.executeJavaScript('onDownloadComplete();');
+                    
+                    const notification = new Notification({
+                        title: 'Download Complete',
+                        body: 'The engine download and installation are complete.',
+                    });
+                    notification.show();
+                } catch (err) {
+                    console.error(err);
+                    win.webContents.executeJavaScript('onDownloadError();');
+                }
             })
             .pipe(fs.createWriteStream(downloadPath));
     }).catch(err => {
@@ -302,44 +311,144 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', function () {
-    if (process.platform !== 'darwin') app.quit();
+    if (process.platform !== 'darwin' && !konamiClosed) app.quit();
 });
 
-function downloadAndUpdate(updatePath, version, downloadURL) {
+function downloadAndUpdate(selectedPath, remoteVersion, downloadURL) {
+        const zipPath = path.join(selectedPath, btoa(remoteVersion).replace('=','') + '_update.zip');
 
-    console.log(`Downloading update from ${downloadURL} to ${updatePath}`);
+        console.log(`Downloading update from ${downloadURL} to ${zipPath}`);
 
-    progress(request(downloadURL))
-        .on('progress', (state) => {
-            console.log(`Download progress: ${Math.round(state.percent * 100)}%`);
-        })
-        .on('error', (err) => {
-            console.error('Download failed:', err);
-            dialog.showMessageBox({
-                title: 'Update Error',
-                message: 'The update failed to download. Please try again later.',
-                buttons: ['OK']
-            });
-            exit(0);
-        })
-        .on('end', () => {
-            console.log('Download complete. Installing update...');
-            zl.extract(downloadURL, updatePath, (err) => {
-                if (err) {
-                    console.error('Failed to extract the update:', err);
-                    return;
-                }
-                console.log('Update installed successfully!');
+        progress(request(downloadURL))
+            .on('progress', (state) => {
+                console.log(`Download progress: ${Math.round(state.percent * 100)}%`);
+            })
+            .on('error', (err) => {
+                console.error('Download failed:', err);
                 dialog.showMessageBox({
-                    title: 'Update Complete',
-                    message: 'The update has been installed successfully. Please restart the application for the changes to take effect.',
+                    title: 'Update Error',
+                    message: 'The update failed to download. Please try again later.',
                     buttons: ['OK']
-                }).then(result => {
-                    app.relaunch();
                 });
-            });
+            })
+            .on('end', () => {
+                console.log('Download complete. Installing update...');
+                extractFile(zipPath, selectedPath)
+                    .then(() => {
+                        console.log('Update installed successfully!');
+                        dialog.showMessageBox({
+                            title: 'Update Complete',
+                            message: 'The update has been installed successfully. Please restart the application for the changes to take effect.',
+                            buttons: ['OK']
+                        }).then(result => {
+                            app.relaunch();
+                        });
+                    })
+                    .catch(err => {
+                        console.error('Failed to extract the update:', err);
+                        dialog.showMessageBox({
+                            title: 'Update Error',
+                            message: 'The update was downloaded but failed to extract. Please try again later.',
+                            buttons: ['OK']
+                        });
+                    });
+            })
+            .pipe(fs.createWriteStream(zipPath));
+}
+
+
+async function extractFile(filePath, outputDir) {
+    try {
+        const type = await getFileType(filePath);
+
+        if (!type) {
+            throw new Error('Unable to detect file type');
+        }
+
+        switch (type.ext) {
+            case 'zip':
+                console.log('Extracting ZIP file...');
+                await extractZip(filePath, outputDir);
+                break;
+            case 'rar':
+                console.log('Extracting RAR file...');
+                await extractRar(filePath, outputDir);
+                break;
+            case '7z':
+                console.log('Extracting 7z file...');
+                await extract7z(filePath, outputDir);
+                break;
+            default:
+                throw new Error('Unsupported file type: ' + type.ext);
+        }
+
+        console.log('Extraction complete');
+        return true;
+    } catch (err) {
+        console.error('Extraction failed:', err);
+        return false;
+    }
+}
+
+
+function getFileType(filePath) {
+    const extname = path.extname(filePath).toLowerCase();
+    
+    switch (extname) {
+        case '.zip':
+            return Promise.resolve({ ext: 'zip' });
+        case '.rar':
+            return Promise.resolve({ ext: 'rar' });
+        case '.7z':
+            return Promise.resolve({ ext: '7z' });
+        default:
+            return Promise.reject(new Error('Unsupported file type'));
+    }
+}
+
+
+
+function extractZip(filePath, outputDir) {
+    return zipLib.extract(filePath, outputDir);
+}
+
+async function __rarExtract(file, destination) {
+    try {
+      // Create the extractor with the file information (returns a promise)
+      const extractor = await createExtractorFromFile({
+        filepath: file,
+        targetPath: destination
+      });
+  
+      // Extract the files
+      [...extractor.extract().files];
+
+      return "";
+    } catch (err) {
+      // May throw UnrarError, see docs
+      console.error(err);
+      return err;
+    }
+  }
+
+  
+function extractRar(filePath, outputDir) {
+    return new Promise((resolve, reject) => {
+        (async () => {
+            var thing = await __rarExtract(filePath, outputDir);
+            resolve();
+        })();
+    });
+}
+
+function extract7z(filePath, outputDir) {
+    return new Promise((resolve, reject) => {
+        seven.extractFull(filePath, outputDir, {
+            $progress: (progress) => console.log(progress),
         })
-        .pipe(fs.createWriteStream(path.join(updatePath, `FNFLauncher-${version}.zip`)));
+        .then(() => resolve())
+        .catch((err) => reject(err));
+    });
 }
 
 module.exports = this;

@@ -1,6 +1,8 @@
 // We do not define anything since this file is evaluated when IPCs are defined.
 // Maybe evaluation isn't the best approach, though.
 
+const { extract } = require("zip-lib");
+
 // construct buttons
 function immb(modName, engineID) {
     return '<button onclick ="removeMod(\'' + modName + '\', \'' + engineID + '\')">Remove</button>';
@@ -36,11 +38,31 @@ ipcMain.on('log', (event, message) => {
     process.stdout.write('(RENDERER PROCESS) ' + message + '\n');
 });
 
-ipcMain.on('reload-launcher', (event) => {
-    if (win) {
-        win.show();
-        win.webContents.executeJavaScript('window.location.reload();');
-    }
+function randomNumber(min,max) {
+    return Math.floor(Math.random()*(max-min+1)+min);
+}
+ipcMain.on('randomize-window', (event) => {
+    var sender = BrowserWindow.fromWebContents(event.sender);
+    sender.setSize(randomNumber(800, 1200), randomNumber(600, 800));
+    sender.setPosition(randomNumber(0, 1920), randomNumber(0, 1080));
+});
+
+ipcMain.on('konami-win-close', (event) => {
+    konamiClosed = true;
+    var sender = BrowserWindow.fromWebContents(event.sender);
+    sender.close();
+    app.quit();
+});
+
+/*
+ipcMain.on('closed-settings', (event) => {
+    win.webContents.executeJavaScript('onCloseSettings();');
+});
+*/
+
+ipcMain.on('remove-mod', (event, mod, engine) => {
+    console.log(path.join(dbReadValue('engine' + engine), 'mods', mod));
+    fs.rmSync(path.join(dbReadValue('engine' + engine), 'mods', mod), { recursive: true });
 });
 
 ipcMain.on('import-engine', (event, engineID) => {
@@ -48,8 +70,8 @@ ipcMain.on('import-engine', (event, engineID) => {
     const webContents = event.sender;
     const eventer = BrowserWindow.fromWebContents(webContents);
     console.log('importing engine...');
-    dialog.showOpenDialog(win, { properties: ['openDirectory'] }).then((result) => {
-        var src = result.filePaths[0];
+    dialog.showOpenDialog(win, { properties: ['openFile'], filters: [{ name: 'FNF Executables', extensions: ['exe'] }], title: 'Select your FNF .exe file' }).then((result) => {
+        var src = path.dirname(result.filePaths[0]);
         if (!src || src == '' || src == null || src == undefined) {
             return;
         }
@@ -176,6 +198,9 @@ ipcMain.on('open-settings', (event) => {
     sw.webContents.on('did-finish-load', () => {
         passToSettings();
     });
+    sw.on('closed', () => {
+        win.webContents.executeJavaScript('onCloseSettings();');
+    });
 });
 
 ipcMain.on('reload-settings', (event) => {
@@ -227,7 +252,7 @@ ipcMain.on('security-alert', (event, setHost, host) => {
     }
 });
 
-ipcMain.on('install-mod', (event, url, ed) => {
+ipcMain.on('install-mod', (event, url, ed, ft) => {
     console.log('installing mod...');
     fs.mkdirSync(path.join(appDataPath, 'downloads'), { recursive: true });
 
@@ -236,7 +261,7 @@ ipcMain.on('install-mod', (event, url, ed) => {
         return;
     }
 
-    const downloadPath = path.join(appDataPath, 'downloads', 'mod-' + btoa(url) + '.zip');
+    const downloadPath = path.join(appDataPath, 'downloads', 'mod-' + btoa(url) + '.' + ft);
 
     progress(request(url))
         .on('progress', (state) => {
@@ -248,15 +273,15 @@ ipcMain.on('install-mod', (event, url, ed) => {
             mmi.webContents.executeJavaScript('onDownloadError();');
         })
         .on('end', () => {
-            zl.extract(downloadPath, path.join(dbReadValue('engine' + ed), 'mods'), (err) => {
-                if (err) {
-                    console.error(err);
-                    mmi.webContents.executeJavaScript('onDownloadError();');
-                    return;
+            (async function () {
+                var didWork = await extractFile(downloadPath, path.join(dbReadValue('engine' + ed), 'mods'));
+                if (didWork) {
+                    mmi.webContents.executeJavaScript('onDownloadComplete();');
                 }
-                fs.rmSync(downloadPath, { recursive: true });
-            });
-            mmi.webContents.executeJavaScript('onDownloadComplete();');
+                else {
+                    mmi.webContents.executeJavaScript('onExtractionFailed();');
+                }
+            })();
         })
         .pipe(fs.createWriteStream(downloadPath));
 });

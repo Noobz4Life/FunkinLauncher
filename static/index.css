@@ -7,20 +7,24 @@ a {
     color: white;
 }
 
+.cslink {
+    margin-top: 1px;
+}
+
 .cso {
     position: relative;
     bottom: 0;
-    height: 0px;
+    overflow: hidden;
     background-color: rgb(13, 11, 14);
     margin: 0 auto;
     font-family: 'Segoe UI', sans-serif;
     font-size: 15px;
     width: 50%;
     text-align: left;
-    padding: 5px;
+    padding: 10px;
     z-index: 10;
     padding: 5px;
-    display: none;
+    transition: 0.3s height;
 }
 .cSelect {
     background-color: rgb(13, 11, 14);
@@ -61,9 +65,18 @@ a {
     }
 }
 
+table {
+    border: 2px solid white;
+    padding: 5px;
+    border-radius: 4px;
+}
 td, th {
+    margin: 3px;
+    padding: 7px;
+}
+td {
     padding: 10px;
-    border: 1px solid white;
+    border-top: 3px dotted white;
 }
 
 h1 {
@@ -85,12 +98,10 @@ h1 {
     height: 100vh;
     display: none;
     background-color: black;
-    opacity: 0;
+    opacity: 0.8;
     transition: 0.7s opacity;
 }
-.license.open {
-    opacity: 0.8;
-}
+
 .licenseContents {
     color: white;
     font-family: 'Arial', sans-serif;
@@ -98,7 +109,7 @@ h1 {
 }
 
 .container {
-    animation: 0.9s ease-in-out 0s 1 onOpenLauncher;
+    animation: 1.5s cubic-bezier(0.83, 0, 0.17, 1) 0s 1 onOpenLauncher;
     display: flex;
     position: fixed;
     top: 0;
@@ -106,7 +117,6 @@ h1 {
     height: 100vh;
     transition: left 0.5s;
 }
-
 .container.loaded {
     left: 0;
 }
@@ -162,23 +172,51 @@ h1 {
     color: white;
     cursor: pointer;
 }
+/*
 #bgvE {
-    width: 100%;
-    margin-bottom: 20px;
-    height: 100%;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
 }
-.bgvE {
-    width: 100%;
-    height: 100%;
-    margin-bottom: 20px;
+*/
+@keyframes blurBG {
+    0% {
+        background-position: 0px 0px;
+    }
+    100% {
+        background-position: 1000px 0px;
+    }
+}
+.blur:not(.konami) {
+    background-image: url("./gridLoop.png");
+    filter: blur(5px);
+    position: fixed;
+    width: 140vw;
+    transform: rotate(-4deg);
+    height: 140vh;
+    top: -20vh;
+    left: -3vw;
+    animation: blurBG 60s linear infinite;
+}
+.blur.konami {
+    background-image: url("./gridLoop.png");
+    filter: hue-rotate(90deg);
+    position: fixed;
+    width: 140vw;
+    transform: rotate(-4deg);
+    height: 140vh;
+    top: -20vh;
+    left: -3vw;
 }
 .top {
     text-align: center;
     color: white;
     font-family: 'Roboto', sans-serif;
     width: 50%;
-    background-color: rgb(37, 30, 39);
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+    background-color: rgba(37, 30, 39,0.8);
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.6);
 }
 h1,h2,h3,h4,h5,h6 {
     font-family: "FNF";

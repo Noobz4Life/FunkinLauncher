@@ -17,9 +17,21 @@ function btngen(element, div) {
     div.appendChild(btn);
 }
 
+window.onbeforeunload = function() {
+    window.electronAPI.closedSettings();
+};
+
 function done() {
     window.alert('The engine has been removed successfully.');
     window.location.reload();
+}
+
+function removeMod(mod,engine) {
+    if (window.confirm('Are you sure you want to delete "' + mod + '"?')) {
+        window.electronAPI.removeMod(mod, engine.replace('engine',''));
+        window.alert('The mod has been removed successfully.');
+        window.location.reload();
+    }
 }
 
 var engineName = [];
@@ -113,7 +125,7 @@ document.getElementById('volSlider').value = localStorage.getItem('volume') * 10
 
 function apply() {
     localStorage.setItem('volume', document.getElementById('volSlider').value / 100);
-    window.electronAPI.reloadLauncher();
+    window.alert('You will have to close the settings to apply the changes.');
 }
 
 document.getElementById('bh').value = localStorage.getItem('engineSrc');
@@ -166,4 +178,7 @@ setInterval(calculateFPS, 1000);
 
 */
 
-window.camera.init(105,70);
+var audio = new Audio('./settingsBGM.mp3');
+audio.volume = 0.5;
+audio.loop = true;
+audio.play();
